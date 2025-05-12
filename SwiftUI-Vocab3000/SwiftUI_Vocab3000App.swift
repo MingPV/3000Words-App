@@ -11,7 +11,11 @@ import SwiftUI
 struct SwiftUI_Vocab3000App: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavbarView()
         }
     }
+}
+
+#Preview {
+    NavbarView()
 }
