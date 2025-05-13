@@ -6,9 +6,10 @@
 //
 
 import CoreXLSX
+import Foundation
 import SwiftUI
 
-struct Vocabulary: Identifiable {
+struct Vocabulary: Identifiable, Codable {
     let id = UUID()
     let word: String
     let meaning: String
@@ -20,6 +21,7 @@ struct VocabListView: View {
     @State private var displayedWords = [Vocabulary]()
     @State private var batchSize = 30
     @State private var showOnlyNotRemembered = false
+    @State private var rememberedStates: [String: Bool] = [:] // 👈 สถานะที่โหลดจากเครื่อง
 
     var filteredWords: [Vocabulary] {
         if showOnlyNotRemembered {
@@ -34,9 +36,9 @@ struct VocabListView: View {
             VStack(spacing: 10) {
                 VStack(spacing: 10) {
                     Text("Vocab List")
-                        .font(.title) // ปรับขนาดฟอนต์
+                        .font(.title)
                         .fontWeight(.bold)
-                        .frame(maxWidth: .infinity) // ทำให้ข้อความอยู่ชิดซ้าย
+                        .frame(maxWidth: .infinity)
 
                     Toggle("Not Remembered", isOn: $showOnlyNotRemembered)
                         .foregroundColor(.secondary)
@@ -44,7 +46,7 @@ struct VocabListView: View {
                         .padding(.bottom, 25)
                         .padding(.top, 10)
                         .toggleStyle(SwitchToggleStyle(tint: .green))
-                        .frame(maxWidth: .infinity) // ให้ toggle อยู่ขวาสุด
+                        .frame(maxWidth: .infinity)
                 }.overlay(
                     Rectangle()
                         .frame(height: 1)
@@ -56,16 +58,19 @@ struct VocabListView: View {
                         let word = filteredWords[index]
                         HStack {
                             Button(action: {
-                                // อัปเดตค่าที่ตรงใน displayedWords
                                 if let realIndex = displayedWords.firstIndex(where: { $0.id == word.id }) {
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         displayedWords[realIndex].isRemembered.toggle()
+
+                                        // 👇 อัปเดตและเซฟลง local storage
+                                        rememberedStates[displayedWords[realIndex].word] = displayedWords[realIndex].isRemembered
+                                        saveRememberedStates(rememberedStates)
                                     }
                                 }
                             }) {
                                 Image(systemName: word.isRemembered ? "checkmark" : "circle")
                                     .foregroundColor(word.isRemembered ? .green : .gray)
-                                    .animation(nil) // Disable animation on checkmark for smoother toggle
+                                    .animation(nil)
                             }
                             .padding(5)
 
@@ -84,7 +89,7 @@ struct VocabListView: View {
                         .listRowBackground(Color.clear)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(word.isRemembered ? Color.green.opacity(0.1) : Color.clear)
-                        .transition(.opacity) // Adding transition animation for the row appearance/disappearance
+                        .transition(.opacity)
                         .onAppear {
                             if index == filteredWords.count - 1 {
                                 loadMoreWords()
@@ -96,7 +101,8 @@ struct VocabListView: View {
             }
             .padding([.leading, .trailing], 16)
             .onAppear {
-                loadWords()
+                rememberedStates = loadRememberedStates() // โหลดก่อน
+                loadWords() // แล้วค่อยโหลดคำศัพท์
             }
         }
     }
@@ -107,8 +113,14 @@ struct VocabListView: View {
                 let words = readWordsFromExcel(fileURL: fileURL)
 
                 DispatchQueue.main.async {
-                    self.words = words
-                    self.displayedWords = Array(words.prefix(batchSize))
+                    // 👇 รวมสถานะ remembered ที่บันทึกไว้เข้ากับคำศัพท์
+                    self.words = words.map { vocab in
+                        var updated = vocab
+                        updated.isRemembered = rememberedStates[vocab.word] ?? false
+                        return updated
+                    }
+
+                    self.displayedWords = Array(self.words.prefix(batchSize))
                 }
             } else {
                 print("oxford3000.xlsx is not in bundle")
@@ -170,6 +182,20 @@ func readWordsFromExcel(fileURL: URL) -> [Vocabulary] {
     }
 
     return vocabList
+}
+
+func saveRememberedStates(_ states: [String: Bool]) {
+    if let data = try? JSONEncoder().encode(states) {
+        UserDefaults.standard.set(data, forKey: "rememberedStates")
+    }
+}
+
+func loadRememberedStates() -> [String: Bool] {
+    if let data = UserDefaults.standard.data(forKey: "rememberedStates"),
+       let states = try? JSONDecoder().decode([String: Bool].self, from: data) {
+        return states
+    }
+    return [:]
 }
 
 #Preview {
